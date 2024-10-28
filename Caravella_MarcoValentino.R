@@ -14,16 +14,18 @@ library(dplyr)
 library(viridis)
 library(terra)
 library(exactextractr)
+library(ncdfCF)
+library(ncdf4)
+library(reshape2)
 
 # SECTION B: TASK REPLICATION 
 
 # -TASK 1-
-
 # Load data
-world <- world
-shp <- world %>% filter(name_long %in% "Serbia")
+shp <- st_read("ne_10m_admin_0_countries.shp")
+shp <- shp %>% filter(SU_A3 == "SRB")
 shp3 <- st_read("NUTS_RG_01M_2021_4326_LEVL_3_repaired.shp") # Load he shapefile of European NUTS 3 regions
-shp3 <- shp3 %>% filter(CNTR_CODE == "RS") # Keep only Serbia
+shp3 <- shp3 %>% filter(CNTR_CODE %in% "RS") # Keep only Serbia
 
 print(shp)
 print(shp3)
@@ -36,7 +38,6 @@ box <- box+c(-.5,-.5,.5,.5)
 box # These are the coordinates of the borders of the shapefile
 
 # -TASK 2-
-
 # Load SPEI
 r.spei <- rast("spei01.nc")
 r.spei
@@ -53,6 +54,7 @@ nlyr(r.spei)
 num_layers <- nlyr(r.spei)
 reduced_spei <- r.spei[[ (num_layers - 5):num_layers ]]
 nlyr(reduced_spei)
+
 plot(reduced_spei)
 
 # or
@@ -78,28 +80,14 @@ reduced_spei[[6]] <- reduced_spei[[6]] * random_vector[6]
 
 # -TASK 4-
 # Extract the grid points of the spei raster data
-points <- as.points(reduced_spei)
-points_sf <- st_as_sf(points)
-r.extract <- extract(reduced_spei, points_sf)
-r.extract
-
-# or
-points <- as.points(reduced_spei) %>% 
+spei.points <- as.points(reduced_spei) %>% 
   st_as_sf() 
-points # No need for a downgrade in resolution
-extract <- extract(reduced_spei, points)
-extract
+spei.points
 
 # -TASK 5- 
-#Extract the spei data for each polygon in shp and shp3
-shp.points <- st_cast(shp, 'POLYGON')
-shp3.points <- st_cast(shp3, 'POLYGON')
-
-shp.points <- extract(r.spei,shp.points) 
-shp3.points <- extract(r.spei,shp3.points) 
-# Extract SPEI values for shp and shp3
-spei_values_shp <- extract(r.spei, shp.points, fun = mean, na.rm = TRUE)
-spei_values_shp3 <- extract(r.spei, shp3.points, fun = mean, na.rm = TRUE)
+# Extract SPEI data for shp and shp3
+spei_values_shp <- extract(r.spei, shp, fun = mean, na.rm = TRUE)
+spei_values_shp3 <- extract(r.spei, shp3, fun = mean, na.rm = TRUE)
 
 spei_2015 <- r.spei[[1435]]  
 # or
@@ -115,22 +103,90 @@ spei_2015_shp3 <- extract(spei_2015, shp3, fun = mean, na.rm = TRUE)
 spei_2020_shp <- extract(spei_2020, shp, fun = mean, na.rm = TRUE)
 spei_2020_shp3 <- extract(spei_2020, shp3, fun = mean, na.rm = TRUE)
 
-# Combine the SPEI values for both shapefiles for 2015 and 2020
-all_spei_2015 <- c(spei_2015_shp$mean, spei_2015_shp3$mean)
-all_spei_2020 <- c(spei_2020_shp$mean, spei_2020_shp3$mean)
-
 # Calculate the average SPEI for Serbia in 2015 and 2020
-# Convert extracted values to numeric, if they are not already
-all_spei_2015 <- as.numeric(c(spei_2015_shp$mean, spei_2015_shp3$mean))
-all_spei_2020 <- as.numeric(c(spei_2020_shp$mean, spei_2020_shp3$mean))
-
-avg_spei_2015 <- mean(all_spei_2015, na.rm = TRUE)
-avg_spei_2020 <- mean(all_spei_2020, na.rm = TRUE)
+avg_spei_2015 <- mean(c(spei_2015_shp$spei_1435, spei_2015_shp3$spei_1435), na.rm = TRUE)
+avg_spei_2020 <- mean(c(spei_2020_shp$spei_1440, spei_2020_shp3$spei_1440), na.rm = TRUE)
 
 # Print the results
 cat("Average SPEI level in Serbia in 2015:", avg_spei_2015, "\n")
 cat("Average SPEI level in Serbia in 2020:", avg_spei_2020, "\n")
 
 # -TASK 6-
-aqueduct <- "Aqueduct_baseline.shp"
-aqueduct <- st_read(aqueduct)
+aqueduct <- st_read("Aqueduct_baseline.shp")
+aqueduct <- aqueduct %>% filter(gid_0 %in% "SRB")
+print(aqueduct)
+summary(aqueduct$bwd_raw)
+
+# -TASK 7-
+# Set seed for reproducibility
+set.seed(954)
+
+# Depending on your choices, the number of features may vary
+# Assuming aqueduct_shapefile$bws_raw has got 99 elements
+length(aqueduct$bws_raw) # 99
+water_stress_2015 <- aqueduct$bws_raw # A vector of length 99
+
+# Add this vector to the Aqueduct shapefile
+aqueduct$water_stress_2015 <- water_stress_2015
+
+# Generate a matrix of random multipliers for 5 years (2016 to 2020) for 99 elements
+multipliers <- matrix(rnorm(5 * 142, mean = 1, sd = 1), nrow = 142, ncol = 5)
+
+# Calculate the annual values by multiplying the 2015 values by the random multipliers
+water_stress_ts <- water_stress_2015 * multipliers
+
+# Add those attributes to the Aqueduct shapefile
+aqueduct$water_stress_2016 <- water_stress_ts[, 1] # Values for 2016
+aqueduct$water_stress_2017 <- water_stress_ts[, 2] # Values for 2017
+aqueduct$water_stress_2018 <- water_stress_ts[, 3] # Values for 2018
+aqueduct$water_stress_2019 <- water_stress_ts[, 4] # Values for 2019
+aqueduct$water_stress_2020 <- water_stress_ts[, 5] # Values for 2020
+
+# -TASK 8- 
+# To rasterize, we first need a "raster template"
+r.template <- rast() %>% 
+  crop(aqueduct)
+r.template
+
+# Create a raster for all five years
+rast.water_stress_2015 <- rasterize(aqueduct, r.template)
+print(aqueduct.rast)
+plot(aqueduct.rast)
+
+# Extraction
+aqueduct_2015_shp <- extract(rast.water_stress_2015, shp, fun = mean, na.rm = TRUE)
+aqueduct_2015_shp3 <- extract(rast.water_stress_2015, shp3, fun = mean, na.rm = TRUE)
+
+# Compute the average
+aqueduct_2015_shp <- as.numeric(aqueduct_2015_shp)
+aqueduct_2015_shp3 <- unlist(aqueduct_2015_shp3)
+aqueduct_2015_shp3 <- as.numeric(aqueduct_2015_shp3)
+avg_aqueduct_2015_shp <- mean(aqueduct_2015_shp, na.rm = TRUE)
+avg_aqueduct_2015_shp3 <- mean(aqueduct_2015_shp3, na.rm = TRUE)
+
+
+cat("Average water stress level in Serbia in 2015:", avg_aqueduct_2015_shp, "\n")
+cat("Average water stress level in NUTS 3 in 2015", avg_aqueduct_2015_shp3, "\n")
+# They are of course different since the mean of in shp tells us only that there 
+# is a water stress level. By increasing the resolution, that is by considering shp3
+# we are able to see how water stress level changes across 25 Serbian regions
+
+# -TASK 9-
+# Load population density data and crop it around the boundary box
+population_density <- rast("gpw-v4-population-density-rev11_2015_15_min_asc/gpw_v4_population_density_rev11_2015_15_min.asc")
+print(population_density)
+
+population_density <- crop(population_density, box)
+plot(population_density)
+
+# Compute the average population density in Serbia
+avg_population_density <- mean(population_density, na.rm = TRUE)
+mean_value <- global(population_density, mean, na.rm = TRUE)
+mean_value
+avg_population_density <- extract(population_density, shp.points, fun = mean, na.rm = TRUE)
+print(avg_population_density)
+
+# Now resample it on the resolution of SPEI data using the “bilinear” method
+resample.population_density <- resample(population_density, reduced_spei, method = "bilinear")
+avg_rsmpl.population_density <- extract(resample.population_density, shp.points, fun = mean, na.rm = TRUE)
+avg_rsmpl.population_density
