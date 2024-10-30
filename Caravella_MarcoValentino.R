@@ -11,6 +11,7 @@ library(spData)
 library(tidyverse) 
 library(readxl)
 library(dplyr)
+library(tidyr)
 library(viridis)
 library(terra)
 library(exactextractr)
@@ -86,29 +87,36 @@ spei_values_shp3 <- extract(reduced_spei, shp3, fun = mean, na.rm = TRUE)
 # Calculate the average SPEI for Serbia in 2015 and 2020 
 years_seq <- 1435:1440
 year_names <- 2015:2020
+spei_matrix <- matrix(NA, nrow = 25, ncol = 12)
+colnames(spei_matrix) <- c(paste0("avg_spei_", year_names, "_shp"), 
+                           paste0("avg_spei_", year_names, "_shp3"))
 for (i in seq_along(years_seq)) {
   field_name <- paste0("spei_", years_seq[i])  
   value_name_shp <- paste0("avg_spei_", year_names[i], "_shp")  
   value_name_shp3 <- paste0("avg_spei_", year_names[i], "_shp3")
-  # Check if the field exists in the data frame
-  if (field_name %in% names(spei_values_shp) && field_name %in% names(spei_values_shp3)) {
-    # Calculate the mean for the specific field and assign it to a variable with a year-based name
-    assign(value_name_shp, mean(spei_values_shp[[field_name]], na.rm = TRUE))
-    assign(value_name_shp3, mean(spei_values_shp3[[field_name]], na.rm = TRUE))
-  } else {
+
+    if (field_name %in% names(spei_values_shp) && field_name %in% names(spei_values_shp3)) {
+
+    avg_shp <- mean(spei_values_shp[[field_name]], na.rm = TRUE)
+    avg_shp3 <- mean(spei_values_shp3[[field_name]], na.rm = TRUE)
+    
+    spei_matrix[, paste0("avg_spei_", year_names[i], "_shp")] <- rep(avg_shp, 25)
+    spei_matrix[, paste0("avg_spei_", year_names[i], "_shp3")] <- rep(avg_shp3, 25)
+  } 
+    else {
     warning(paste("Field", field_name, "does not exist in spei_values_shp"))
   }
 }
+avg_spei <- as.data.frame(spei_matrix)
 
-# Set row and column names for clarity
-rownames(mean_matrix) <- c("avg_spei_shp", "avg_spei_shp3")
-colnames(mean_matrix) <- paste0("avg_spei_", year_names)# Print the results
-cat("Average SPEI level in Serbia in 2015:", avg_spei_2015_shp, "\n")
-cat("Average SPEI level in Serbia in 2020:", avg_spei_2020_shp, "\n")
-cat("Average SPEI level in Serbian regions in 2015:", avg_spei_2015_shp3, "\n")
-cat("Average SPEI level in Serbian regions in 2020:", avg_spei_2020_shp3, "\n")
+# Print the results
+cat("Average SPEI level in Serbia in 2015:", avg_spei$avg_spei_2015_shp[[1]], "\n")
+cat("Average SPEI level in Serbia in 2020:", avg_spei$avg_spei_2020_shp[[1]], "\n")
+cat("Average SPEI level in Serbian regions in 2015:", avg_spei$avg_spei_2015_shp3[[1]], "\n")
+cat("Average SPEI level in Serbian regions in 2020:", avg_spei$avg_spei_2020_shp3[[1]], "\n")
 
-rm(spei_values_shp, spei_values_shp3)
+rm(spei_values_shp, spei_values_shp3, year_names, years_seq, value_name_shp, value_name_shp3, spei_matrix)
+rm(avg_shp, avg_shp3)
 
 # -TASK 6-
 aqueduct <- st_read("Aqueduct_baseline.shp")
@@ -159,33 +167,37 @@ for (year in years) {
 }
 
 # Extraction
-for (year in years) {
-  aqueduct_name <- paste0("rast.water_stress_", year)
+years <- 2015:2020
+num_years <- length(years)
+matrix_shp <- matrix(NA, nrow = 25, ncol = num_years)
+colnames(matrix_shp) <- paste0("avg_", years)
+
+matrix_shp3 <- matrix(NA, nrow = 25, ncol = num_years)
+colnames(matrix_shp3) <- paste0("avg_", years)
+
+for (i in seq_along(years)) {
+  year <- years[i]
   
-  aqueduct <- get(aqueduct_name)
+  raster_name <- paste0("rast.water_stress_", year)
+  water_stress_raster <- get(raster_name)
   
-  assign(paste0("aqueduct_", year, "_shp"), extract(aqueduct, shp, fun = mean, na.rm = TRUE))
-  assign(paste0("aqueduct_", year, "_shp3"), extract(aqueduct, shp3, fun = mean, na.rm = TRUE))
+  shp_values <- extract(water_stress_raster, shp, fun = mean, na.rm = TRUE)[,2]
+  shp3_values <- extract(water_stress_raster, shp3, fun = mean, na.rm = TRUE)[,2]
+  
+  matrix_shp[, i] <- rep(shp_values, 25)
+  matrix_shp3[, i] <- rep(mean(shp3_values, na.rm = TRUE), 25)
 }
 
-# Compute the average water stress level in Serbia in 2020.
-aqueduct_2020_shp <- as.numeric(aqueduct_2020_shp)
-aqueduct_2020_shp3 <- unlist(aqueduct_2020_shp3)
-aqueduct_2020_shp3 <- as.numeric(aqueduct_2020_shp3)
+water_stress_shp <- as.data.frame(matrix_shp)
+water_stress_shp3 <- as.data.frame(matrix_shp3)
 
-avg_aqueduct_2020_shp <- mean(aqueduct_2020_shp, na.rm = TRUE)
-avg_aqueduct_2020_shp3 <- mean(aqueduct_2020_shp3, na.rm = TRUE)
-
-
-cat("Average water stress level in Serbia in 2020:", avg_aqueduct_2020_shp, "\n")
-cat("Average water stress level in NUTS 3 in 2020", avg_aqueduct_2020_shp3, "\n")
+cat("Average water stress level in Serbia in 2020:", water_stress_shp$avg_2020[[1]], "\n")
+cat("Average water stress level in NUTS 3 in 2020", water_stress_shp3$avg_2020[[1]], "\n")
 # These two means are different because the resolution of aqueduct_2020_shp and that
 # of aqueduct_2020_shp3 are different. Thus, the first average concerns the whole 
 #country, while the second refers 25 regions of Serbia
-rm(r.template, year, raster_var_name, field_name)
-rm(aqueduct_2015_shp, aqueduct_2015_shp3, aqueduct_2016_shp, aqueduct_2016_shp3, aqueduct_2017_shp, aqueduct_2017_shp3, aqueduct_2018_shp, aqueduct_2018_shp3)
-rm(aqueduct_2019_shp, aqueduct_2019_shp3)
-# rm(rast.water_stress_2015, rast.water_stress_2016, rast.water_stress_2017, rast.water_stress_2018, rast.water_stress_2019, rast.water_stress_2020)
+rm(r.template, years, raster_var_name, field_name, water_stress_raster, matrix_shp, matrix_shp3, i, num_years, raster_name)
+rm(rast.water_stress_2015, rast.water_stress_2016, rast.water_stress_2017, rast.water_stress_2018, rast.water_stress_2019, rast.water_stress_2020)
 
 # -TASKdata:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABIAAAASCAYAAABWzo5XAAAAbElEQVR4Xs2RQQrAMAgEfZgf7W9LAguybljJpR3wEse5JOL3ZObDb4x1loDhHbBOFU6i2Ddnw2KNiXcdAXygJlwE8OFVBHDgKrLgSInN4WMe9iXiqIVsTMjH7z/GhNTEibOxQswcYIWYOR/zAjBJfiXh3jZ6AAAAAElFTkSuQmCC 9-
 # Load population density data and crop it around the boundary box
@@ -218,18 +230,113 @@ Serbian_gva_sector_a <- Serbian_gva_sector_a %>% select(TERRITORY_ID, LEVEL_ID, 
 Serbian_gva_sector_a <- Serbian_gva_sector_a %>% filter(Serbian_gva_sector_a$TERRITORY_ID != "RSZZZ" )
 
 # Merge Serbian_gva_sector_a with shp3
-merged.Serbian_gva_sector_a <- shp3 %>% left_join(Serbian_gva_sector_a, by = c( "shp3$NUTS_ID" = "Serbian_gva_sector_a$TERRITORY_ID"))
 Serbian_gva_sector_a <- Serbian_gva_sector_a %>%
   rename(NUTS_ID = TERRITORY_ID )
 merged.Serbian_gva_sector_a <- shp3 %>% left_join(Serbian_gva_sector_a, by = shp$NUTS_ID)
 
-# -TASK 13-
-new_shp3 <- shp3 %>% mutate(avg_spei_2015 = avg_spei_2015_shp3, 
-                            avg_spei_2020 = avg_spei_2020_shp3,
-                            avg_water_stress = avg_aqueduct_2020_shp3)
-final.sf <- new_shp3
-final.sf <- final.sf %>% arrange(NUTS_ID)
-Serbian_gva_sector_a <- Serbian_gva_sector_a %>% arrange(NUTS_ID)
-final.sf <- final.sf %>% left_join(Serbian_gva_sector_a, by = "NUTS_ID")
-final.sf <- final.sf %>% select(-LEVEL_ID, -NAME_HTML, -NUTS_NAME, -FID)
-plot(final.sf, max.plot = 20)
+# -TASK 13- I NEED TO MERGE ONLY SHP3 CORRELATED AVERAGES
+avg_spei <- avg_spei %>% mutate(id = row_number())
+shp3 <- shp3 %>% mutate(id = row_number())
+water_stress_shp3 <- water_stress_shp3 %>% mutate(id = row_number())
+Serbian_gva_sector_a <- Serbian_gva_sector_a %>% mutate(id = row_number())
+
+final.sf <- Serbian_gva_sector_a %>% left_join(select(shp3, id, geometry), by = "id")
+columns_to_merge <- c("avg_spei_2015_shp3", "avg_spei_2016_shp3", "avg_spei_2017_shp3", "avg_spei_2018_shp3", "avg_spei_2019_shp3",
+                      "avg_spei_2020_shp3")
+fina.sf <- final.sf %>% left_join(select(avg_spei, id, columns_to_merge), by = "id") %>% left_join(water_stress_shp3, by = "id")
+
+# -TASK 14-
+spei_columns <- c("avg_spei_2015_shp", "avg_spei_2016_shp", "avg_spei_2017_shp", 
+                  "avg_spei_2018_shp", "avg_spei_2019_shp", "avg_spei_2020_shp")
+water_stress_columns <- c("avg_2015", "avg_2016", 
+                          "avg_2017", "avg_2018", 
+                          "avg_2019", "avg_2020")
+water_stress_shp <- water_stress_shp %>% mutate(id = row_number())
+
+# Select and rename the columns for clarity
+final_data <- avg_spei %>%
+  select(id, all_of(spei_columns)) %>%  
+  rename_with(~ gsub("avg_spei_", "SPEI_", .), starts_with("avg_spei")) %>%
+  left_join(water_stress_shp %>% 
+              select(id, all_of(water_stress_columns)) %>% 
+              rename_with(~ gsub("avg_", "Water Stress ", .), starts_with("avg")),
+            by = "id")
+
+# Step 2: Reshape the Data
+final_long <- final_data %>%
+  pivot_longer(
+    cols = -id,
+    names_to = c(".value", "Year"),
+    names_pattern = "(.*)_(\\d+)"
+  )
+
+# Convert Year to numeric
+final_long$Year <- as.numeric(final_long$Year)
+
+# Step 3: Create the Plots
+# Plotting SPEI
+ggplot(final_long, aes(x = Year, y = SPEI, group = id, color = id)) +
+  geom_line() +
+  labs(title = "Time Series of SPEI in Serbia (2015 - 2020)",
+       x = "Year",
+       y = "SPEI") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Plotting Water Stress
+ggplot(final_long, aes(x = Year, y = `Water Stress`, group = id, color = id)) +
+  geom_line() +
+  labs(title = "Time Series of Water Stress in Serbia (2015 - 2020)",
+       x = "Year",
+       y = "Water Stress Level") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# -TASK 15-
+# Step 1: Prepare the Data
+# Select the relevant columns for SPEI and water stress
+spei_columns <- c("avg_spei_2015_shp3", "avg_spei_2016_shp3", "avg_spei_2017_shp3", 
+                  "avg_spei_2018_shp3", "avg_spei_2019_shp3", "avg_spei_2020_shp3")
+water_stress_columns <- c("avg_spei_2015_shp", "avg_spei_2016_shp", 
+                          "avg_spei_2017_shp", "avg_spei_2018_shp", 
+                          "avg_spei_2019_shp", "avg_spei_2020_shp")
+Agricultural_GVA_columns <- c("2015", "2016", "2017", "2018", "2019", "2020")
+
+# Select and rename the columns for clarity
+final_data <- final.sf %>%
+  select(id, contains("avg_spei"), contains("avg")) %>%
+  rename_with(~ gsub("avg_spei_", "SPEI_", .), starts_with("avg_spei")) %>%
+  rename_with(~ gsub("avg", "Water Stress", .), starts_with("avg"))
+
+
+# Step 2: Reshape the Data
+final_long <- final_data %>%
+  pivot_longer(
+    cols = -id,
+    names_to = c(".value", "Year"),
+    names_pattern = "(.*)_(\\d+)"
+  )
+
+# Convert Year to numeric
+final_long$Year <- as.numeric(final_long$Year)
+
+# Step 3: Create the Plots
+# Plotting SPEI
+ggplot(final_long, aes(x = Year, y = SPEI, group = id, color = id)) +
+  geom_line() +
+  labs(title = "Time Series of SPEI in Serbia (2015 - 2020)",
+       x = "Year",
+       y = "SPEI") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Plotting Water Stress
+ggplot(final_long, aes(x = Year, y = `Water Stress`, group = id, color = id)) +
+  geom_line() +
+  labs(title = "Time Series of Water Stress in Serbia (2015 - 2020)",
+       x = "Year",
+       y = "Water Stress Level") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# -TASK 16-
