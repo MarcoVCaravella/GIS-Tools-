@@ -22,7 +22,7 @@ library(reshape2)
 # SECTION B: TASK REPLICATION 
 
 # -TASK 1-
-# Load data
+# Load the shapefile of countries and European NUTS 3 Regions
 shp <- st_read("ne_10m_admin_0_countries.shp")
 shp <- shp %>% filter(SU_A3 == "SRB")
 shp3 <- st_read("NUTS_RG_01M_2021_4326_LEVL_3_repaired.shp") # Load he shapefile of European NUTS 3 regions
@@ -30,24 +30,24 @@ shp3 <- shp3 %>% filter(CNTR_CODE %in% "RS") # Keep only Serbia
 print(shp)
 print(shp3)
 
-# Create a boundary box containing the shapefile of Serbia with a small margin (0.5 in 
-# all directions)
+# Create a boundary box containing the shapefile of Serbia with a small 
+# margin (0.5 in all directions)
 box <- st_bbox(shp)
 box <- box+c(-.5,-.5,.5,.5)
 box # These are the coordinates of the borders of the shapefile
 
 # -TASK 2-
-# Load SPEI
+# Load SPEI data
 r.spei <- rast("spei01.nc")
 r.spei
 
 # Crop "spei01" around the boxplot
 r.spei <- crop(r.spei, box) 
-r.spei # Note that the extent of raster data is slightly different from that of the 
-# box plot. However, we expected that.
+r.spei # Note that the extent of raster data is slightly different from 
+# that of the box plot. However, we expected that.
 plot(r.spei)
 
-# Keep only the last six layers
+# Keep only the last six layers of the raster
 nlyr(r.spei)
 num_layers <- nlyr(r.spei)
 reduced_spei <- r.spei[[ (num_layers - 5):num_layers ]]
@@ -72,6 +72,7 @@ reduced_spei[[5]] <- reduced_spei[[5]] * random_vector[5]
 reduced_spei[[6]] <- reduced_spei[[6]] * random_vector[6]
 
 rm(random_vector)
+
 # -TASK 4-
 # Extract the grid points of the spei raster data
 spei.points <- as.points(reduced_spei) %>% 
@@ -79,46 +80,24 @@ spei.points <- as.points(reduced_spei) %>%
 spei.points
 
 rm(spei.points)
+
 # -TASK 5- 
 # Extract SPEI data for shp and shp3
-spei_values_shp <- extract(reduced_spei, shp, fun = mean, na.rm = TRUE)
-spei_values_shp3 <- extract(reduced_spei, shp3, fun = mean, na.rm = TRUE)
+spei_shp <- extract(reduced_spei, shp, fun = mean, na.rm = TRUE)
+spei_shp3 <- extract(reduced_spei, shp3, fun = mean, na.rm = TRUE)
 
-# Calculate the average SPEI for Serbia in 2015 and 2020 
-years_seq <- 1435:1440
-year_names <- 2015:2020
-spei_matrix <- matrix(NA, nrow = 25, ncol = 12)
-colnames(spei_matrix) <- c(paste0("avg_spei_", year_names, "_shp"), 
-                           paste0("avg_spei_", year_names, "_shp3"))
-for (i in seq_along(years_seq)) {
-  field_name <- paste0("spei_", years_seq[i])  
-  value_name_shp <- paste0("avg_spei_", year_names[i], "_shp")  
-  value_name_shp3 <- paste0("avg_spei_", year_names[i], "_shp3")
-
-    if (field_name %in% names(spei_values_shp) && field_name %in% names(spei_values_shp3)) {
-
-    avg_shp <- mean(spei_values_shp[[field_name]], na.rm = TRUE)
-    avg_shp3 <- mean(spei_values_shp3[[field_name]], na.rm = TRUE)
-    
-    spei_matrix[, paste0("avg_spei_", year_names[i], "_shp")] <- rep(avg_shp, 25)
-    spei_matrix[, paste0("avg_spei_", year_names[i], "_shp3")] <- rep(avg_shp3, 25)
-  } 
-    else {
-    warning(paste("Field", field_name, "does not exist in spei_values_shp"))
-  }
-}
-avg_spei <- as.data.frame(spei_matrix)
+# Calculate the average SPEI for Serbia in 2015 and 2020
+avg_spei_2015 <- mean(c(spei_shp$spei_1435, spei_shp3$spei_1435), na.rm = TRUE)
+avg_spei_2020 <- mean(c(spei_shp$spei_1440, spei_shp3$spei_1440), na.rm = TRUE)
 
 # Print the results
-cat("Average SPEI level in Serbia in 2015:", avg_spei$avg_spei_2015_shp[[1]], "\n")
-cat("Average SPEI level in Serbia in 2020:", avg_spei$avg_spei_2020_shp[[1]], "\n")
-cat("Average SPEI level in Serbian regions in 2015:", avg_spei$avg_spei_2015_shp3[[1]], "\n")
-cat("Average SPEI level in Serbian regions in 2020:", avg_spei$avg_spei_2020_shp3[[1]], "\n")
+cat("Average SPEI level in Serbia in 2015:", avg_spei_2015, "\n")
+cat("Average SPEI level in Serbia in 2020:", avg_spei_2020, "\n")
 
-rm(spei_values_shp, spei_values_shp3, year_names, years_seq, value_name_shp, value_name_shp3, spei_matrix)
-rm(avg_shp, avg_shp3)
+rm(avg_spei_2015, avg_spei_2020)
 
 # -TASK 6-
+# Load Aqueduct 4.0 shapefile
 aqueduct <- st_read("Aqueduct_baseline.shp")
 aqueduct <- aqueduct %>% filter(gid_0 %in% "SRB")
 print(aqueduct)
@@ -129,13 +108,14 @@ summary(aqueduct$bwd_raw) # We will consider this variable as the water stress
 # Set seed for reproducibility
 set.seed(954)
 
+# Create a vector with bws_raw observations
 length(aqueduct$bws_raw)
 water_stress_2015 <- aqueduct$bws_raw
 
 # Add this vector to the Aqueduct shapefile
 aqueduct$water_stress_2015 <- water_stress_2015
 
-# Generate a matrix of random multipliers for 5 years (2016 to 2020) for 99 elements
+# Generate a matrix of random multipliers for 5 years (2016 to 2020) for 142 elements
 multipliers <- matrix(rnorm(5 * 142, mean = 1, sd = 1), nrow = 142, ncol = 5)
 
 # Calculate the annual values by multiplying the 2015 values by the random multipliers
@@ -148,7 +128,7 @@ aqueduct$water_stress_2018 <- water_stress_ts[, 3] # Values for 2018
 aqueduct$water_stress_2019 <- water_stress_ts[, 4] # Values for 2019
 aqueduct$water_stress_2020 <- water_stress_ts[, 5] # Values for 2020
 
-rm(water_stress_ts, multipliers)
+rm(water_stress_ts, multipliers, water_stress_2015)
 
 # -TASK 8- 
 # To rasterize, we first need a "raster template"
@@ -167,7 +147,6 @@ for (year in years) {
 }
 
 # Extraction
-years <- 2015:2020
 num_years <- length(years)
 matrix_shp <- matrix(NA, nrow = 25, ncol = num_years)
 colnames(matrix_shp) <- paste0("avg_", years)
@@ -185,9 +164,8 @@ for (i in seq_along(years)) {
   shp3_values <- extract(water_stress_raster, shp3, fun = mean, na.rm = TRUE)[,2]
   
   matrix_shp[, i] <- rep(shp_values, 25)
-  matrix_shp3[, i] <- rep(mean(shp3_values, na.rm = TRUE), 25)
+  matrix_shp3[, i] <- shp3_values
 }
-
 water_stress_shp <- as.data.frame(matrix_shp)
 water_stress_shp3 <- as.data.frame(matrix_shp3)
 
@@ -196,14 +174,14 @@ cat("Average water stress level in NUTS 3 in 2020", water_stress_shp3$avg_2020[[
 # These two means are different because the resolution of aqueduct_2020_shp and that
 # of aqueduct_2020_shp3 are different. Thus, the first average concerns the whole 
 #country, while the second refers 25 regions of Serbia
-rm(r.template, years, raster_var_name, field_name, water_stress_raster, matrix_shp, matrix_shp3, i, num_years, raster_name)
+rm(r.template, years, raster_var_name, field_name, water_stress_raster, matrix_shp, matrix_shp3, i, num_years, raster_name, field_name, year)
 rm(rast.water_stress_2015, rast.water_stress_2016, rast.water_stress_2017, rast.water_stress_2018, rast.water_stress_2019, rast.water_stress_2020)
+rm(shp_values, shp3_values)
 
-# -TASKdata:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABIAAAASCAYAAABWzo5XAAAAbElEQVR4Xs2RQQrAMAgEfZgf7W9LAguybljJpR3wEse5JOL3ZObDb4x1loDhHbBOFU6i2Ddnw2KNiXcdAXygJlwE8OFVBHDgKrLgSInN4WMe9iXiqIVsTMjH7z/GhNTEibOxQswcYIWYOR/zAjBJfiXh3jZ6AAAAAElFTkSuQmCC 9-
+# -TASK 9-
 # Load population density data and crop it around the boundary box
 population_density <- rast("gpw-v4-population-density-rev11_2015_15_min_asc/gpw_v4_population_density_rev11_2015_15_min.asc")
 print(population_density)
-
 population_density <- crop(population_density, box)
 plot(population_density)
 
@@ -215,15 +193,16 @@ cat("Average population density in Serbia in 2015:", avg_population_density$gpw_
 resample.avg_population_density <- resample(population_density, reduced_spei, method = "bilinear")
 avg_resample.avg_population_density <- extract(resample.avg_population_density, shp, fun = mean, na.rm = TRUE)
 cat("Average population density in Serbia in 2015 (resampled resolution):", avg_resample.avg_population_density$gpw_v4_population_density_rev11_2015_15_min, "\n")
-# Serbian population density is changed only slightly. It is probably due to resolution adjustment
-rm(resample.avg_population_density, avg_resample.avg_population_density)
+# Serbian population density is changed only slightly. It is probably due to 
+# resolution adjustment (the lower the resolution the higher the average)
+rm(resample.avg_population_density, avg_resample.avg_population_density, reduced_spei)
 
 # -TASK 10-
 
 # -TASK 11-
 
 # -TASK 12-
-# Load "Serbian_gva_sector_a" xlsx 
+# Load "Serbian_gva_sector_a" xlsx, keep only data from 2015 to 2020, and drop RSZZZ
 Serbian_gva_sector_a <- read_xlsx("Serbian_gva_sector_a.xlsx", sheet = "Sheet2")
 Serbian_gva_sector_a <- Serbian_gva_sector_a %>% select(TERRITORY_ID, LEVEL_ID, NAME_HTML, VERSIONS,
                                                         UNIT, SECTOR, `2015`, `2016`, `2017`, `2018`, `2019`, `2020`)
@@ -233,47 +212,60 @@ Serbian_gva_sector_a <- Serbian_gva_sector_a %>% filter(Serbian_gva_sector_a$TER
 Serbian_gva_sector_a <- Serbian_gva_sector_a %>%
   rename(NUTS_ID = TERRITORY_ID )
 merged.Serbian_gva_sector_a <- shp3 %>% left_join(Serbian_gva_sector_a, by = shp$NUTS_ID)
+Serbian_gva_sector_a <- Serbian_gva_sector_a %>%
+  rename_with(~ paste0("agr_GVA_", .), .cols = c("2015", "2016", "2017", "2018", "2019", "2020"))
 
 # -TASK 13- I NEED TO MERGE ONLY SHP3 CORRELATED AVERAGES
-avg_spei <- avg_spei %>% mutate(id = row_number())
+# Generate a new simple feature object called “final_sf” whose features 
+# are the Serbian NUTS 3 polygons and whose fields are the average values
+# of SPEI, water stress, and Agricultural GVA in each considered year
+spei_shp3 <- spei_shp3 %>% mutate(id = row_number())
 shp3 <- shp3 %>% mutate(id = row_number())
 water_stress_shp3 <- water_stress_shp3 %>% mutate(id = row_number())
 Serbian_gva_sector_a <- Serbian_gva_sector_a %>% mutate(id = row_number())
+agr_GVA_columns <- c("agr_GVA_2015", "agr_GVA_2016", "agr_GVA_2017", "agr_GVA_2018", "agr_GVA_2019", "agr_GVA_2020")
+colnames(spei_shp3) <- c("id", "spei_2015", "spei_2016", "spei_2017", "spei_2018", "spei_2019", "spei_2020")
 
-final.sf <- Serbian_gva_sector_a %>% left_join(select(shp3, id, geometry), by = "id")
-columns_to_merge <- c("avg_spei_2015_shp3", "avg_spei_2016_shp3", "avg_spei_2017_shp3", "avg_spei_2018_shp3", "avg_spei_2019_shp3",
-                      "avg_spei_2020_shp3")
-fina.sf <- final.sf %>% left_join(select(avg_spei, id, columns_to_merge), by = "id") %>% left_join(water_stress_shp3, by = "id")
+final_sf <- Serbian_gva_sector_a %>% left_join(select(shp3, id, geometry), by = "id")
+columns_to_merge <- c("spei_2015", "spei_2016", "spei_2017", "spei_2018", "spei_2019",
+                      "spei_2020")
+final_sf <- final_sf %>% left_join(select(spei_shp3, id, columns_to_merge), by = "id") %>% left_join(water_stress_shp3, by = "id")
+final_sf <- st_as_sf(final_sf)
+ggplot() +
+  geom_sf(data = final_sf)
 
 # -TASK 14-
-spei_columns <- c("avg_spei_2015_shp", "avg_spei_2016_shp", "avg_spei_2017_shp", 
-                  "avg_spei_2018_shp", "avg_spei_2019_shp", "avg_spei_2020_shp")
+# Plot the time series of SPEI and water stress in Serbia from 2015 to 2020
+spei_columns <- c("spei_2015", "spei_2016", "spei_2017", "spei_2018", "spei_2019",
+                  "spei_2020")
 water_stress_columns <- c("avg_2015", "avg_2016", 
                           "avg_2017", "avg_2018", 
                           "avg_2019", "avg_2020")
 water_stress_shp <- water_stress_shp %>% mutate(id = row_number())
 
 # Select and rename the columns for clarity
-final_data <- avg_spei %>%
+final_data <- spei_shp3 %>%
   select(id, all_of(spei_columns)) %>%  
-  rename_with(~ gsub("avg_spei_", "SPEI_", .), starts_with("avg_spei")) %>%
-  left_join(water_stress_shp %>% 
-              select(id, all_of(water_stress_columns)) %>% 
-              rename_with(~ gsub("avg_", "Water Stress ", .), starts_with("avg")),
-            by = "id")
+  rename_with(~ gsub("spei_", "SPEI_", .), starts_with("spei")) %>%
+  left_join(
+    water_stress_shp %>% 
+      select(id, all_of(water_stress_columns)) %>% 
+      rename_with(~ gsub("avg_", "Water_Stress_", .), starts_with("avg")),
+    by = "id"
+  )
 
-# Step 2: Reshape the Data
+# Reshape the data to long format with separate columns for SPEI and Water Stress
 final_long <- final_data %>%
   pivot_longer(
     cols = -id,
-    names_to = c(".value", "Year"),
-    names_pattern = "(.*)_(\\d+)"
-  )
+    names_to = c("Variable", "Year"),
+    names_pattern = "(SPEI|Water_Stress)_(\\d+)"
+  ) %>%
+  pivot_wider(names_from = "Variable", values_from = "value")
 
 # Convert Year to numeric
 final_long$Year <- as.numeric(final_long$Year)
 
-# Step 3: Create the Plots
 # Plotting SPEI
 ggplot(final_long, aes(x = Year, y = SPEI, group = id, color = id)) +
   geom_line() +
@@ -284,7 +276,7 @@ ggplot(final_long, aes(x = Year, y = SPEI, group = id, color = id)) +
   theme(legend.position = "none")
 
 # Plotting Water Stress
-ggplot(final_long, aes(x = Year, y = `Water Stress`, group = id, color = id)) +
+ggplot(final_long, aes(x = Year, y = `Water_Stress`, group = id, color = id)) +
   geom_line() +
   labs(title = "Time Series of Water Stress in Serbia (2015 - 2020)",
        x = "Year",
@@ -293,34 +285,39 @@ ggplot(final_long, aes(x = Year, y = `Water Stress`, group = id, color = id)) +
   theme(legend.position = "none")
 
 # -TASK 15-
-# Step 1: Prepare the Data
+# Plot the time series of SPEI, water stress, and Agricultural GVA of 
+# each Serbian NUTS 3 region.
 # Select the relevant columns for SPEI and water stress
 spei_columns <- c("avg_spei_2015_shp3", "avg_spei_2016_shp3", "avg_spei_2017_shp3", 
                   "avg_spei_2018_shp3", "avg_spei_2019_shp3", "avg_spei_2020_shp3")
-water_stress_columns <- c("avg_spei_2015_shp", "avg_spei_2016_shp", 
-                          "avg_spei_2017_shp", "avg_spei_2018_shp", 
-                          "avg_spei_2019_shp", "avg_spei_2020_shp")
-Agricultural_GVA_columns <- c("2015", "2016", "2017", "2018", "2019", "2020")
 
 # Select and rename the columns for clarity
 final_data <- final.sf %>%
-  select(id, contains("avg_spei"), contains("avg")) %>%
-  rename_with(~ gsub("avg_spei_", "SPEI_", .), starts_with("avg_spei")) %>%
-  rename_with(~ gsub("avg", "Water Stress", .), starts_with("avg"))
-
-
-# Step 2: Reshape the Data
+  select(id, all_of(spei_columns)) %>%  
+    rename_with(~ gsub("avg_spei_", "SPEI_", .), starts_with("avg_spei")) %>%
+  left_join(
+    final.sf %>% 
+      select(id, all_of(water_stress_columns)) %>% 
+        rename_with(~ gsub("avg_", "Water_Stress_", .), starts_with("avg")),
+        by = "id") %>% 
+  left_join(
+  final.sf %>% 
+      select(id, all_of(agr_GVA_columns)) %>%
+      rename_with(~ gsub("agr_GVA", "agr_GVA", .), starts_with("agr")),
+      by = "id") 
+  
+# Reshape the data to long format with separate columns for SPEI, Water Stress, and agr_GVA
 final_long <- final_data %>%
   pivot_longer(
     cols = -id,
-    names_to = c(".value", "Year"),
-    names_pattern = "(.*)_(\\d+)"
-  )
+    names_to = c("Variable", "Year"),
+    names_pattern = "(SPEI|Water_Stress|agr_GVA)_(\\d+)"
+  ) %>%
+  pivot_wider(names_from = "Variable", values_from = "value")
 
 # Convert Year to numeric
 final_long$Year <- as.numeric(final_long$Year)
 
-# Step 3: Create the Plots
 # Plotting SPEI
 ggplot(final_long, aes(x = Year, y = SPEI, group = id, color = id)) +
   geom_line() +
@@ -331,7 +328,7 @@ ggplot(final_long, aes(x = Year, y = SPEI, group = id, color = id)) +
   theme(legend.position = "none")
 
 # Plotting Water Stress
-ggplot(final_long, aes(x = Year, y = `Water Stress`, group = id, color = id)) +
+ggplot(final_long, aes(x = Year, y = `Water_Stress`, group = id, color = id)) +
   geom_line() +
   labs(title = "Time Series of Water Stress in Serbia (2015 - 2020)",
        x = "Year",
@@ -339,4 +336,56 @@ ggplot(final_long, aes(x = Year, y = `Water Stress`, group = id, color = id)) +
   theme_minimal() +
   theme(legend.position = "none")
 
+# Plotting agricultural GVA
+ggplot(final_long, aes(x = Year, y = `agr_GVA`, group = id, color = as.factor(id))) +
+       geom_line() +
+       labs(title = "Time Series of Agricultural GVA in Serbian NUTS 3 Regions (2015 - 2020)",
+                       x = "Year",
+                       y = "Agricultural GVA") +
+       theme_minimal() +
+       theme(legend.position = "none") +
+      scale_color_viridis_d()
+
 # -TASK 16-
+# Assume that
+final.sf$speigr <- (spei_values_shp3$spei_1440 - spei_values_shp3$spei_1435) / spei_values_shp3$spei_1435
+final.sf <- st_transform(final.sf, 4326)
+st_crs(final.sf)
+
+ggplot() +
+  geom_sf(data = final.sf, aes(fill = speigr), color = "black") +
+  scale_fill_viridis_c(option = "D", name = "SPEI growth rate") +
+  labs(title = "The growth rate of SPEI from 2015 to 2020 of each Serbian NUTS 3 region") +
+  theme_minimal() +
+  theme(legend.position = "right")
+
+# -TASK 17-
+
+final.sf$wsgr <- (water_stress_shp3$avg_2020 - water_stress_shp3$avg_2015) / water_stress_shp3$avg_2015 
+
+ggplot(data = st_transform(final_sf, crs = 32634)) +
+  geom_sf(aes(fill = wsgr), color = "black") +
+  scale_fill_viridis_c(option = "G", name = "Water stress index growth rate") +
+  labs(title = "The growth rate of the water stress index from 2015 to 2020 of each Serbian NUTS 3 region") +
+  theme_minimal() +
+  theme(legend.position = "right")
+
+# -TASK 18-
+final_sf$agrvagr <- (final_sf$agrgva_2020 - final_sf$agrgva_2015) / final_sf$agrgva_2015
+
+ggplot(data = st_transform(final_sf, crs = 3035)) +
+  geom_sf(aes(fill = agrvagr), color = "black") +
+  scale_fill_viridis_c(option = "D", name = "Agricultural GVA growth rate") +
+  labs(title = "The growth rate of the Agricultural GVA from 2015 to 2020 of each Serbian NUTS 3 region") +
+  theme_minimal() +
+  theme(legend.position = "right")
+
+ggplot(data = st_transform(final_sf, crs = 3035)) +
+  geom_sf(aes(fill = cut(agrvagr, breaks = c(-Inf, 0, 0.05, Inf), labels = c("Negative growth", "0 - 0.05", "> 0.05"))), color = "black") +
+  scale_fill_manual(
+    values = c("Negative growth" = "blue", "0 - 0.05" = "lightblue", "> 0.05" = "white"),
+    name = "Agricultural GVA growth rate"
+  ) +
+  labs(title = "The growth rate of the Agricultural GVA from 2015 to 2020 of each Serbian NUTS 3 region") +
+  theme_minimal() +
+  theme(legend.position = "right")
